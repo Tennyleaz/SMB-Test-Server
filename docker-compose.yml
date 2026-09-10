@@ -1,0 +1,32 @@
+services:
+  smb-test:
+    build:
+      context: .
+    image: smb-test-server:local
+    container_name: smb-test
+
+    # Values come from .env if present, otherwise these defaults apply.
+    environment:
+      SMB_USER: "${SMB_USER:-testuser}"
+      SMB_PASS: "${SMB_PASS:-testpass}"
+      SMB_SHARE: "${SMB_SHARE:-testshare}"
+      SMB_PORT: "${SMB_PORT:-445}"
+      SMB_UID: "${SMB_UID:-1000}"
+      SMB_WORKGROUP: "${SMB_WORKGROUP:-WORKGROUP}"
+      SMB_NETBIOS_NAME: "${SMB_NETBIOS_NAME:-SMBTEST}"
+      SMB_MIN_PROTOCOL: "${SMB_MIN_PROTOCOL:-SMB2}"
+      SMB_MAX_PROTOCOL: "${SMB_MAX_PROTOCOL:-SMB3}"
+      SMB_NTLM_AUTH: "${SMB_NTLM_AUTH:-ntlmv2-only}"
+      SMB_LOG_LEVEL: "${SMB_LOG_LEVEL:-1}"
+
+    # SMB_HOST_PORT is what clients connect to; SMB_PORT is what smbd listens
+    # on inside the container. Set SMB_HOST_PORT=1445 to sidestep a host that
+    # already owns 445 (any Windows machine, or a host running Samba).
+    ports:
+      - "${SMB_HOST_PORT:-445}:${SMB_PORT:-445}/tcp"
+
+    # :ro is the second of the three read-only layers. Do not drop it.
+    volumes:
+      - ./share:/share:ro
+
+    restart: unless-stopped

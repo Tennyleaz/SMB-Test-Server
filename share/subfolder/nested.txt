@@ -1,0 +1,1 @@
+Nested file, used to verify subdirectory traversal.

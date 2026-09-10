@@ -1,0 +1,78 @@
+#
+# SMB Test Server - template. Double-underscore-delimited placeholders are
+# substituted by scripts/entrypoint.sh at container start.
+# Edit this file, not the rendered /etc/samba/smb.conf.
+#
+
+[global]
+   workgroup = __SMB_WORKGROUP__
+   netbios name = __SMB_NETBIOS_NAME__
+   server string = SMB Test Server
+
+   # ---- listener ----
+   # Accepts a space-separated list, e.g. "445 1445".
+   smb ports = __SMB_PORT__
+   bind interfaces only = no
+   # No nmbd in this image, so NetBIOS name resolution is off. Clients connect
+   # by IP or by a name resolved outside Samba (hosts file / DNS).
+   disable netbios = yes
+   dns proxy = no
+
+   # ---- protocol under test ----
+   server min protocol = __SMB_MIN_PROTOCOL__
+   server max protocol = __SMB_MAX_PROTOCOL__
+   server signing = auto
+   unix extensions = no
+
+   # ---- authentication: named user only, guest never ----
+   security = user
+   passdb backend = tdbsam
+   # "Never" makes a bad or unknown username fail outright rather than silently
+   # falling back to the guest account.
+   map to guest = Never
+   guest account = nobody
+   null passwords = no
+   # 2 = block anonymous session setup and share enumeration entirely.
+   restrict anonymous = 2
+   ntlm auth = __SMB_NTLM_AUTH__
+
+   # ---- no printing support ----
+   load printers = no
+   printing = bsd
+   printcap name = /dev/null
+   disable spoolss = yes
+
+   # ---- logging goes to `docker logs` ----
+   logging = stdout
+   log level = __SMB_LOG_LEVEL__
+   max log size = 0
+   panic action = /bin/true
+
+   # ---- paths ----
+   pid directory = /run/samba
+   private dir = /var/lib/samba/private
+
+[__SMB_SHARE__]
+   comment = Read-only test share
+   path = __SHARE_PATH__
+   browseable = yes
+
+   # Layer 1 of 3 for read-only. Layer 2 is the `:ro` bind mount in
+   # docker-compose.yml; layer 3 is that the container user does not own
+   # the files. Any one of these alone is too easy to defeat by accident.
+   read only = yes
+   writeable = no
+
+   guest ok = no
+   valid users = __SMB_USER__
+
+   create mask = 0444
+   directory mask = 0555
+
+   # Uncomment if the host files are not world-readable and the container user's
+   # UID does not match the owner's - smbd will then read them as root. Writes
+   # are still impossible because of the two other read-only layers above.
+   # force user = root
+
+   veto files = /.DS_Store/Thumbs.db/desktop.ini/
+   delete veto files = no

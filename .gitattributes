@@ -1,0 +1,5 @@
+# Shell scripts and Samba config must be LF or the container fails to start.
+* text=auto eol=lf
+*.sh text eol=lf
+*.tmpl text eol=lf
+Dockerfile text eol=lf
