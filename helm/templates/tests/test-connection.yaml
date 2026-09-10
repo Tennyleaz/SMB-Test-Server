@@ -1,0 +1,124 @@
+{{/*
+`helm test` runs the same assertions as the Verification section of the repo
+README, from inside the cluster. Three of them are expected to FAIL - guest
+enumeration, a bogus user, and any write - so the script inverts those. A
+"pass" that let a write through would be the real failure.
+*/}}
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "smb-test-server.fullname" . }}-test
+  labels:
+    {{- include "smb-test-server.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: test
+    # Delete a previous test pod first, so `helm test` can be re-run without
+    # colliding with the pod left behind by the last run.
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  restartPolicy: Never
+  {{- with .Values.imagePullSecrets }}
+  imagePullSecrets:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  automountServiceAccountToken: false
+  containers:
+    - name: smbclient
+      image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+      imagePullPolicy: {{ .Values.image.pullPolicy }}
+      env:
+        - name: SMB_HOST
+          value: {{ include "smb-test-server.fullname" . }}
+        - name: SMB_PORT
+          value: {{ .Values.service.port | quote }}
+        - name: SMB_SHARE
+          value: {{ .Values.smb.shareName | quote }}
+        - name: SMB_USER
+          value: {{ .Values.auth.user | quote }}
+        - name: SMB_PASS
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "smb-test-server.secretName" . }}
+              key: {{ include "smb-test-server.secretKey" . }}
+      command:
+        - /bin/sh
+        - -c
+        - |
+          set -u
+          fails=0
+          target="//${SMB_HOST}/${SMB_SHARE}"
+          creds="${SMB_USER}%${SMB_PASS}"
+
+          # expect_ok NAME CMD...     - command must succeed
+          # expect_deny NAME CMD...   - command must fail; succeeding is the bug
+          expect_ok() {
+              name=$1; shift
+              if "$@" >/tmp/out 2>&1; then
+                  echo "ok       ${name}"
+              else
+                  echo "NOT OK   ${name}"; sed 's/^/         | /' /tmp/out; fails=$((fails + 1))
+              fi
+          }
+          expect_deny() {
+              name=$1; shift
+              if "$@" >/tmp/out 2>&1; then
+                  echo "NOT OK   ${name} (succeeded, but must be refused)"
+                  sed 's/^/         | /' /tmp/out; fails=$((fails + 1))
+              else
+                  echo "ok       ${name} (refused, as required)"
+              fi
+          }
+
+          echo "target: ${target} port ${SMB_PORT}"
+          echo
+
+          expect_ok "share is listed with valid credentials" \
+              smbclient -L "$SMB_HOST" -p "$SMB_PORT" -U "$creds"
+
+          expect_deny "anonymous enumeration is blocked" \
+              smbclient -L "$SMB_HOST" -p "$SMB_PORT" -N
+
+          expect_deny "unknown user does not fall back to guest" \
+              smbclient "$target" -p "$SMB_PORT" -U 'nobody%wrong' -c 'ls'
+
+          expect_ok "readme.txt is readable" \
+              smbclient "$target" -p "$SMB_PORT" -U "$creds" -c 'get readme.txt /tmp/readme.txt'
+
+          expect_ok "subdirectory traversal works" \
+              smbclient "$target" -p "$SMB_PORT" -U "$creds" -c 'cd subfolder; ls'
+
+          expect_ok "non-ASCII filenames are listed" \
+              smbclient "$target" -p "$SMB_PORT" -U "$creds" -c 'cd names; ls'
+
+          # smbclient's exit code is not dependable for put/rm - it can report
+          # success while the server refused the operation. So attempt it,
+          # ignore the exit code, and assert on what the share actually holds.
+          listing() {
+              smbclient "$target" -p "$SMB_PORT" -U "$creds" -c 'ls' 2>/dev/null
+          }
+
+          smbclient "$target" -p "$SMB_PORT" -U "$creds" \
+              -c 'put /etc/hostname nope.txt' >/tmp/out 2>&1 || true
+          if listing | grep -q 'nope\.txt'; then
+              echo "NOT OK   writes are refused (nope.txt now exists on the share)"
+              sed 's/^/         | /' /tmp/out; fails=$((fails + 1))
+          else
+              echo "ok       writes are refused (nope.txt absent afterwards)"
+          fi
+
+          smbclient "$target" -p "$SMB_PORT" -U "$creds" \
+              -c 'rm readme.txt' >/tmp/out 2>&1 || true
+          if listing | grep -q 'readme\.txt'; then
+              echo "ok       deletes are refused (readme.txt still present)"
+          else
+              echo "NOT OK   deletes are refused (readme.txt is gone)"
+              sed 's/^/         | /' /tmp/out; fails=$((fails + 1))
+          fi
+
+          echo
+          if [ "$fails" -eq 0 ]; then
+              echo "all checks passed"
+              exit 0
+          fi
+          echo "${fails} check(s) failed"
+          exit 1

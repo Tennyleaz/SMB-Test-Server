@@ -1,0 +1,82 @@
+{{ .Chart.Name }} {{ .Chart.Version }} installed as release {{ .Release.Name }}.
+
+  share      //<host>/{{ .Values.smb.shareName }}   (read-only)
+  user       {{ .Values.auth.user }}
+  port       {{ .Values.service.port }} (Service) -> {{ include "smb-test-server.firstPort" . }} (container)
+  protocol   {{ .Values.smb.minProtocol }} .. {{ .Values.smb.maxProtocol }}
+  guest      disabled
+
+Wait for the pod to become Ready. Readiness runs a real authenticated
+smbclient login, so Ready means logins actually work:
+
+  kubectl rollout status -n {{ .Release.Namespace }} deploy/{{ include "smb-test-server.fullname" . }}
+
+{{- if .Values.auth.existingSecret }}
+
+The password comes from your existing Secret {{ .Values.auth.existingSecret }}, key {{ .Values.auth.existingSecretKey }}.
+To read it back:
+
+  kubectl get secret -n {{ .Release.Namespace }} {{ .Values.auth.existingSecret }} \
+      -o jsonpath='{.data.{{ .Values.auth.existingSecretKey }}}' | base64 -d; echo
+{{- else }}
+
+Password:
+
+  kubectl get secret -n {{ .Release.Namespace }} {{ include "smb-test-server.fullname" . }} \
+      -o jsonpath='{.data.smb-password}' | base64 -d; echo
+{{- end }}
+
+Run the built-in checks. Three of them assert that something is REFUSED
+(anonymous enumeration, an unknown user, and writes), so a green run means the
+share is properly locked down:
+
+  helm test -n {{ .Release.Namespace }} {{ .Release.Name }} --logs
+
+Connect:
+{{- if eq .Values.service.type "ClusterIP" }}
+
+  # ClusterIP is not reachable from outside the cluster. Forward it:
+  kubectl port-forward -n {{ .Release.Namespace }} svc/{{ include "smb-test-server.fullname" . }} 1445:{{ .Values.service.port }}
+
+  # then, from your machine:
+  smbclient //localhost/{{ .Values.smb.shareName }} -p 1445 -U {{ .Values.auth.user }}
+{{- else if eq .Values.service.type "NodePort" }}
+
+  export NODE_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
+  export NODE_PORT=$(kubectl get svc -n {{ .Release.Namespace }} {{ include "smb-test-server.fullname" . }} -o jsonpath='{.spec.ports[0].nodePort}')
+  smbclient //$NODE_IP/{{ .Values.smb.shareName }} -p $NODE_PORT -U {{ .Values.auth.user }}
+{{- else if eq .Values.service.type "LoadBalancer" }}
+
+  # May take a minute for the external address to be assigned.
+  export SVC_IP=$(kubectl get svc -n {{ .Release.Namespace }} {{ include "smb-test-server.fullname" . }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+  smbclient //$SVC_IP/{{ .Values.smb.shareName }} -U {{ .Values.auth.user }}
+  sudo mount -t cifs //$SVC_IP/{{ .Values.smb.shareName }} /mnt/smbtest \
+      -o user={{ .Values.auth.user }},vers=3.0,ro
+{{- end }}
+
+Or from inside the cluster, at {{ include "smb-test-server.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.service.port }}
+
+Logs (raise smb.logLevel to 3 for per-request protocol detail):
+
+  kubectl logs -n {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }} -f
+{{- if ne (.Values.service.port | toString) "445" }}
+
+NOTE: service.port is {{ .Values.service.port }}, not 445. The Windows SMB client can only
+dial 445, so Windows clients will not be able to reach this. Linux and macOS
+clients are fine with any port.
+{{- end }}
+{{- if gt (.Values.replicaCount | int) 1 }}
+
+WARNING: replicaCount is {{ .Values.replicaCount }}. smbd keeps session state in the pod, so
+clients load-balanced to a different replica mid-session will be dropped. Set
+replicaCount back to 1 unless you are deliberately testing that.
+{{- end }}
+{{- if eq .Values.image.tag "local" }}
+
+NOTE: image tag is "local", which is what docker-compose builds into the local
+Docker daemon. A cluster cannot pull that. Push the image to a registry, or
+side-load it:
+
+  kind load docker-image {{ .Values.image.repository }}:{{ .Values.image.tag }}
+  minikube image load {{ .Values.image.repository }}:{{ .Values.image.tag }}
+{{- end }}

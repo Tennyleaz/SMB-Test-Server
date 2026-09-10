@@ -20,6 +20,7 @@ config/smb.conf.tmpl    edit this, not the rendered smb.conf
 scripts/entrypoint.sh
 scripts/gen-fixtures.sh generates the bulky test files at build time
 share/                  committed test files, copied into the image at /share
+helm/                   Helm chart, for running the same image in Kubernetes
 ```
 
 ## Share contents
@@ -84,6 +85,20 @@ docker compose logs -f
 ```
 
 Default credentials: `testuser` / `testpass`, share `testshare`.
+
+## Kubernetes
+
+`helm/` runs the same image in a cluster. Because the share is baked in, there
+is no PersistentVolume to provision and nothing to seed.
+
+```sh
+kind load docker-image smb-test-server:local     # or push it to a registry
+helm install smb ./helm -n smb-test --create-namespace
+helm test smb -n smb-test --logs                 # runs the checks below, in-cluster
+```
+
+See [helm/README.md](helm/README.md) for values and the two hardening settings
+that will crashloop the pod if you turn them on.
 
 ## Connect
 

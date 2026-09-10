@@ -1,0 +1,186 @@
+# Default values for smb-test-server.
+#
+# The test files are baked into the image, so there is nothing to mount and no
+# PersistentVolume to provision. What gets baked in is decided at `docker build`
+# time by the FIXTURE_* build args - see the repo README. This chart cannot
+# change it; rebuild and push a new image tag instead.
+
+# --------------------------------------------------------------------------
+# Image
+# --------------------------------------------------------------------------
+# The compose file builds `smb-test-server:local`, which only exists in the
+# local Docker daemon. A cluster cannot pull that. Either push it to a registry
+# and set repository/tag here, or side-load it:
+#
+#   kind load docker-image smb-test-server:local
+#   minikube image load smb-test-server:local
+#
+image:
+  repository: smb-test-server
+  tag: local
+  # IfNotPresent is required for a side-loaded image - Always would make the
+  # kubelet try to pull it from a registry and fail with ImagePullBackOff.
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+# - name: my-registry-creds
+
+# --------------------------------------------------------------------------
+# Replicas
+# --------------------------------------------------------------------------
+# Keep this at 1. smbd holds per-session state in the pod, so a second replica
+# behind one Service would drop clients onto a pod that has never seen their
+# session. This is a test fixture, not an HA file server.
+replicaCount: 1
+
+# Recreate rather than RollingUpdate: two smbd pods must not serve the same
+# Service address even briefly during an upgrade.
+strategy:
+  type: Recreate
+
+# --------------------------------------------------------------------------
+# Credentials
+# --------------------------------------------------------------------------
+# Guest access is always refused by smb.conf - these are the only credentials
+# that work.
+auth:
+  user: testuser
+  password: testpass
+
+  # Set to the name of an existing Secret to keep the password out of values.
+  # It must contain a `smb-password` key:
+  #   kubectl create secret generic smb-creds --from-literal=smb-password=s3cret
+  existingSecret: ""
+  existingSecretKey: smb-password
+
+# --------------------------------------------------------------------------
+# SMB settings. These map 1:1 onto the container's SMB_* environment variables.
+# --------------------------------------------------------------------------
+smb:
+  shareName: testshare
+
+  # Port smbd binds inside the pod. 445 is privileged, which is why the
+  # container runs as root - see podSecurityContext below.
+  port: 445
+
+  # Dialect range under test. Valid: NT1 (SMB1, legacy only), SMB2, SMB2_02,
+  # SMB2_10, SMB3, SMB3_11. Set both to the same value to pin one dialect.
+  minProtocol: SMB2
+  maxProtocol: SMB3
+
+  # ntlmv2-only | yes | no. Needs "yes" if minProtocol is NT1.
+  ntlmAuth: ntlmv2-only
+
+  workgroup: WORKGROUP
+  netbiosName: SMBTEST
+
+  # UID of the unix account smbd authenticates against. Irrelevant for the
+  # baked-in share, which is root-owned and world-readable.
+  uid: 1000
+
+  # 0-10. Raise to 3 for per-request protocol detail in `kubectl logs`.
+  logLevel: 1
+
+# --------------------------------------------------------------------------
+# Service
+# --------------------------------------------------------------------------
+# The Windows SMB *client* can only dial port 445, so leave `port` alone if
+# Windows clients need to reach this. Linux (mount.cifs, smbclient) and macOS
+# clients can use any port.
+service:
+  type: ClusterIP
+  port: 445
+  # nodePort: 30445        # only when type is NodePort
+  # loadBalancerIP: ""     # only when type is LoadBalancer
+  annotations: {}
+
+# --------------------------------------------------------------------------
+# Probes
+# --------------------------------------------------------------------------
+# Readiness runs the same smbclient check as the image's HEALTHCHECK, so the
+# pod only goes Ready once authentication actually succeeds - a TCP check would
+# pass while smbd was still rejecting logins. Liveness is a plain TCP connect,
+# because restarting on a transient auth hiccup would be worse than useless.
+probes:
+  readiness:
+    enabled: true
+    initialDelaySeconds: 10
+    periodSeconds: 30
+    timeoutSeconds: 5
+    failureThreshold: 3
+  liveness:
+    enabled: true
+    initialDelaySeconds: 15
+    periodSeconds: 30
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+# --------------------------------------------------------------------------
+# Security context
+# --------------------------------------------------------------------------
+# smbd runs as root here, and has to:
+#   - port 445 is privileged, so binding it needs uid 0 or NET_BIND_SERVICE
+#   - the entrypoint renders /etc/samba/smb.conf and smbpasswd writes the
+#     tdbsam passdb under /var/lib/samba/private, both at startup
+#
+# So do NOT set runAsNonRoot: true or readOnlyRootFilesystem: true - the pod
+# will crashloop. To run unprivileged instead, set smb.port to something above
+# 1024, keep service.port at 445 (the Service remaps it), and set:
+#
+#   podSecurityContext:
+#     runAsUser: 1000
+#     runAsGroup: 1000
+#
+# Note that the container image is not built for that and has not been tested
+# that way.
+podSecurityContext: {}
+
+securityContext:
+  # NO_NEW_PRIVS. Safe here: it blocks privilege gain through setuid binaries
+  # and file capabilities, neither of which smbd uses, and it does not stop a
+  # root process from calling setuid().
+  allowPrivilegeEscalation: false
+
+  # The default capability set is deliberately left intact, which is also how
+  # docker-compose runs this image. `drop: [ALL]` looks tempting and does not
+  # work: smbd calls setuid()/setgid() to impersonate the authenticated user on
+  # every file access, so losing CAP_SETUID/CAP_SETGID breaks session setup,
+  # and binding 445 needs CAP_NET_BIND_SERVICE.
+  #
+  # If you want to try trimming it anyway - untested, start here and expect to
+  # add more as sessions fail:
+  #
+  # capabilities:
+  #   drop: [ALL]
+  #   add: [NET_BIND_SERVICE, SETUID, SETGID, DAC_OVERRIDE, DAC_READ_SEARCH]
+
+# --------------------------------------------------------------------------
+# Scheduling and resources
+# --------------------------------------------------------------------------
+# Empty by default so the chart installs on a laptop cluster. Sensible starting
+# point for a shared cluster:
+#
+#   resources:
+#     requests: { cpu: 50m, memory: 64Mi }
+#     limits:   { cpu: 500m, memory: 256Mi }
+resources: {}
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+podAnnotations: {}
+podLabels: {}
+
+# Extra environment variables, for anything this chart does not expose.
+extraEnv: []
+# - name: SHARE_PATH
+#   value: /share
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+nameOverride: ""
+fullnameOverride: ""

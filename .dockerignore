@@ -8,6 +8,7 @@
 .env.*
 README.md
 docker-compose.yml
+helm/
 
 # Host junk that would otherwise end up inside the baked share. The veto files
 # list in smb.conf.tmpl hides these from clients, but better not to copy them.

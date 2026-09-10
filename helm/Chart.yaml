@@ -1,0 +1,21 @@
+apiVersion: v2
+name: smb-test-server
+description: A minimal read-only Samba server for exercising SMB client implementations. Test files are baked into the image, so no PersistentVolume is needed.
+type: application
+
+# version    - the chart's own version. Bump on any change in this directory.
+# appVersion - the SMB Test Server image version this chart targets.
+version: 0.1.0
+appVersion: "0.1.0"
+
+keywords:
+  - smb
+  - cifs
+  - samba
+  - testing
+home: https://github.com/phison/smb-test-server
+sources:
+  - https://github.com/phison/smb-test-server
+maintainers:
+  - name: Tenny
+    email: tenny_lu@phison.com

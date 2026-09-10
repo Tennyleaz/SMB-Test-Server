@@ -1,0 +1,120 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "smb-test-server.fullname" . }}
+  labels:
+    {{- include "smb-test-server.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  strategy:
+    type: {{ .Values.strategy.type }}
+  selector:
+    matchLabels:
+      {{- include "smb-test-server.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        # Roll the pod when the password changes. Without this, `helm upgrade`
+        # updates the Secret and leaves smbd running with the old password,
+        # because the entrypoint only applies it at startup.
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "smb-test-server.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "smb-test-server.serviceAccountName" . }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: smbd
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: smb
+              containerPort: {{ include "smb-test-server.firstPort" . }}
+              protocol: TCP
+          env:
+            - name: SMB_USER
+              value: {{ .Values.auth.user | quote }}
+            - name: SMB_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "smb-test-server.secretName" . }}
+                  key: {{ include "smb-test-server.secretKey" . }}
+            - name: SMB_SHARE
+              value: {{ .Values.smb.shareName | quote }}
+            - name: SMB_PORT
+              value: {{ .Values.smb.port | quote }}
+            - name: SMB_UID
+              value: {{ .Values.smb.uid | quote }}
+            - name: SMB_WORKGROUP
+              value: {{ .Values.smb.workgroup | quote }}
+            - name: SMB_NETBIOS_NAME
+              value: {{ .Values.smb.netbiosName | quote }}
+            - name: SMB_MIN_PROTOCOL
+              value: {{ .Values.smb.minProtocol | quote }}
+            - name: SMB_MAX_PROTOCOL
+              value: {{ .Values.smb.maxProtocol | quote }}
+            - name: SMB_NTLM_AUTH
+              value: {{ .Values.smb.ntlmAuth | quote }}
+            - name: SMB_LOG_LEVEL
+              value: {{ .Values.smb.logLevel | quote }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- if .Values.probes.readiness.enabled }}
+          # Same check as the image's HEALTHCHECK: Ready only once a real
+          # authenticated session succeeds.
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                # Port is templated, not taken from $SMB_PORT, because that may
+                # be a space-separated list and smbclient -p wants one value.
+                - 'smbclient -L localhost -p {{ include "smb-test-server.firstPort" . }} -U "$SMB_USER%$SMB_PASS" >/dev/null 2>&1'
+            initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.readiness.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
+          {{- end }}
+          {{- if .Values.probes.liveness.enabled }}
+          livenessProbe:
+            tcpSocket:
+              port: smb
+            initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.liveness.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
+          {{- end }}
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
