@@ -1,0 +1,1 @@
+A leading dash, which trips up naive argv handling.

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<share name="testshare" readOnly="true">
+  <protocol min="SMB2" max="SMB3"/>
+  <files>
+    <file path="readme.txt" bytes="512"/>
+    <file path="subfolder/nested.txt" bytes="64"/>
+  </files>
+  <note>Entities: &amp; &lt; &gt; &quot;</note>
+</share>

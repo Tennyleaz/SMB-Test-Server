@@ -23,7 +23,9 @@ die() { printf '[entrypoint] ERROR: %s\n' "$*" >&2; exit 1; }
 # --------------------------------------------------------------------------
 # Sanity checks
 # --------------------------------------------------------------------------
-[ -d "$SHARE_PATH" ] || die "share path ${SHARE_PATH} does not exist (is the volume mounted?)"
+# /share is baked into the image, so a missing path means either a broken build
+# or SHARE_PATH pointing somewhere that was never mounted.
+[ -d "$SHARE_PATH" ] || die "share path ${SHARE_PATH} does not exist (bad build, or SHARE_PATH overridden without a matching mount?)"
 
 case "$SMB_USER" in
     ''|*[!a-zA-Z0-9_.-]*) die "SMB_USER '${SMB_USER}' contains characters that are unsafe in smb.conf" ;;
@@ -74,6 +76,8 @@ testparm -s "$CONF" >/dev/null || die "smb.conf failed validation"
 # --------------------------------------------------------------------------
 # Warn about the classic permission trap: files the container user can't read.
 # --------------------------------------------------------------------------
+# Cannot trip on the baked-in share, which is root-owned and world-readable.
+# Still worth checking, because SHARE_PATH can be pointed at a bind mount.
 if ! su -s /bin/sh "$SMB_USER" -c "test -r '${SHARE_PATH}'" 2>/dev/null; then
     log "WARNING: ${SMB_USER} cannot read ${SHARE_PATH}."
     log "WARNING: fix the host permissions, set SMB_UID to the owner's uid,"
@@ -81,6 +85,7 @@ if ! su -s /bin/sh "$SMB_USER" -c "test -r '${SHARE_PATH}'" 2>/dev/null; then
 fi
 
 log "share    : //<host>/${SMB_SHARE}  (read-only)"
+log "contents : $(find "$SHARE_PATH" -type f 2>/dev/null | wc -l) files, $(find "$SHARE_PATH" -type d 2>/dev/null | wc -l) directories"
 log "user     : ${SMB_USER}"
 log "port     : ${SMB_PORT}"
 log "protocol : ${SMB_MIN_PROTOCOL} .. ${SMB_MAX_PROTOCOL}"

@@ -2,6 +2,14 @@ services:
   smb-test:
     build:
       context: .
+      # See the ARG block in the Dockerfile for what these control. Change one
+      # and rebuild with `docker compose build` for it to take effect.
+      args:
+        FIXTURE_LARGE_MB: "${FIXTURE_LARGE_MB:-10}"
+        FIXTURE_SPARSE_MB: "${FIXTURE_SPARSE_MB:-0}"
+        FIXTURE_MANY_FILES: "${FIXTURE_MANY_FILES:-256}"
+        FIXTURE_DEEP_LEVELS: "${FIXTURE_DEEP_LEVELS:-20}"
+        FIXTURE_HOSTILE_NAMES: "${FIXTURE_HOSTILE_NAMES:-0}"
     image: smb-test-server:local
     container_name: smb-test
 
@@ -25,8 +33,13 @@ services:
     ports:
       - "${SMB_HOST_PORT:-445}:${SMB_PORT:-445}/tcp"
 
-    # :ro is the second of the three read-only layers. Do not drop it.
-    volumes:
-      - ./share:/share:ro
+    # No volumes. The share contents are baked into the image at /share, so a
+    # fresh container always serves the same known file set and there is no
+    # host folder to set up, permission-match, or accidentally write to.
+    #
+    # To serve your own files instead, uncomment this and keep the :ro - it
+    # shadows the baked-in /share rather than merging with it:
+    # volumes:
+    #   - ./my-files:/share:ro
 
     restart: unless-stopped

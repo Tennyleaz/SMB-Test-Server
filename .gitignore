@@ -1,1 +1,5 @@
 .env
+
+# Test fixtures must be tracked even when a global gitignore excludes the
+# extension. A global `*.log` rule silently dropped sample.log from the image.
+!share/**

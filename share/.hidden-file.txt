@@ -1,0 +1,2 @@
+A dotfile. SMB has no concept of Unix hidden files, so this should be
+visible in a directory listing unless the client filters it.

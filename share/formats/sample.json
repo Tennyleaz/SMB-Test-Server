@@ -1,0 +1,11 @@
+{
+  "share": "testshare",
+  "readOnly": true,
+  "protocols": ["SMB2", "SMB3"],
+  "fixtures": {
+    "textFiles": 6,
+    "generated": true,
+    "unicode": "繁體中文 / 日本語"
+  },
+  "nested": { "a": { "b": { "c": null } } }
+}

@@ -1,0 +1,16 @@
+# Keep the build context to what the image actually needs: config/, scripts/
+# and share/. Everything here is either irrelevant or must not be shipped.
+.git
+.gitattributes
+.gitignore
+.dockerignore
+.env
+.env.*
+README.md
+docker-compose.yml
+
+# Host junk that would otherwise end up inside the baked share. The veto files
+# list in smb.conf.tmpl hides these from clients, but better not to copy them.
+**/.DS_Store
+**/Thumbs.db
+**/desktop.ini

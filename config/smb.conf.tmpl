@@ -57,9 +57,12 @@
    path = __SHARE_PATH__
    browseable = yes
 
-   # Layer 1 of 3 for read-only. Layer 2 is the `:ro` bind mount in
-   # docker-compose.yml; layer 3 is that the container user does not own
-   # the files. Any one of these alone is too easy to defeat by accident.
+   # Layer 1 of 2 for read-only. Layer 2 is that the baked-in files at
+   # __SHARE_PATH__ are root-owned and mode 0444/0555, while smbd serves them
+   # as an unprivileged user. Either one alone is too easy to defeat by
+   # accident. (There used to be a third layer, the `:ro` bind mount in
+   # docker-compose.yml - it went away with the mount itself, since there is
+   # no host folder left to protect.)
    read only = yes
    writeable = no
 
@@ -69,9 +72,11 @@
    create mask = 0444
    directory mask = 0555
 
-   # Uncomment if the host files are not world-readable and the container user's
-   # UID does not match the owner's - smbd will then read them as root. Writes
-   # are still impossible because of the two other read-only layers above.
+   # Uncomment if you bind-mount your own folder over the share, the files are
+   # not world-readable, and the container user's UID does not match the
+   # owner's - smbd will then read them as root. This defeats layer 2, leaving
+   # `read only = yes` above as the only thing preventing writes, so only
+   # uncomment it together with a `:ro` mount.
    # force user = root
 
    veto files = /.DS_Store/Thumbs.db/desktop.ini/

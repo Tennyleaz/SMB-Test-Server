@@ -1,0 +1,6 @@
+2026-01-01T00:00:00Z INFO  smbd started
+2026-01-01T00:00:01Z INFO  share testshare mounted read-only at /share
+2026-01-01T00:00:12Z INFO  session setup ok user=testuser
+2026-01-01T00:00:13Z DEBUG tree connect //SMBTEST/testshare
+2026-01-01T00:00:14Z WARN  write denied: share is read-only
+2026-01-01T00:00:15Z ERROR NT_STATUS_ACCESS_DENIED path=readme.txt

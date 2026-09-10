@@ -1,0 +1,5 @@
+id,name,size_bytes,modified
+1,readme.txt,512,2026-01-01T00:00:00Z
+2,nested.txt,64,2026-01-02T12:30:00Z
+3,"quoted, with comma",128,2026-01-03T08:15:00Z
+4,"quoted ""with quotes""",256,2026-01-04T23:59:59Z

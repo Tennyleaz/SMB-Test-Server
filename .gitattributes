@@ -3,3 +3,9 @@
 *.sh text eol=lf
 *.tmpl text eol=lf
 Dockerfile text eol=lf
+
+# Test fixtures whose exact bytes are the point. Without -text the line-ending
+# normalisation above would quietly rewrite them and the fixture would stop
+# testing anything.
+share/text/crlf.txt -text
+share/text/no-trailing-newline.txt -text
